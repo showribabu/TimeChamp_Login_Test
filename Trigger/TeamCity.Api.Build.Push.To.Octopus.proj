@@ -1,0 +1,247 @@
+<?xml version="1.0"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="ReleaseBuild" ToolsVersion="14.0">
+
+  <Import Project="..\sourcecode\BusinessView\packages\MSBuildTasks.1.5.0.235\build\MSBuildTasks.targets" />
+  <Import Project="..\sourcecode\BusinessView\packages\MSBuild.Extension.Pack.1.9.1\build\net40\MSBuild.Extension.Pack.targets" />
+
+  <PropertyGroup>
+    <SqlDistributeExePath>..\sourcecode\BusinessView\packages\Microsoft.Data.Tools.Msbuild.10.0.61804.210\lib\net46</SqlDistributeExePath>
+    <Environment Condition="$(Environment) == ''">Qa</Environment>
+    <BUILD_NUMBER Condition="$(BUILD_NUMBER) == ''">999</BUILD_NUMBER>
+    <SITE_MODE Condition="$(SITE_MODE) == ''">test</SITE_MODE>
+    <TeamCityBranchName Condition="$(TeamCityBranchName) == 'refs/heads/dev'">btrakqa</TeamCityBranchName>
+
+    <ProductName>BTrak</ProductName>
+    <SolutionName>BTrak.Build</SolutionName>
+    <DatabaseSolutionName>BTrak.Database</DatabaseSolutionName>
+    <ApiProjectName>..\sourcecode\BusinessView\Btrack.Api\Btrak.Api.csproj</ApiProjectName>
+    <SignalrProjectName>..\sourcecode\BusinessView\Btrack.Api.SignalR\Btrak.Api.SignalR.csproj</SignalrProjectName>
+    <SolutionBasePath>..\sourcecode\BusinessView</SolutionBasePath>
+    <BuildsBasePath>C:\Builds\$(Environment)</BuildsBasePath>
+    <DeploymentRootFolder>$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)</DeploymentRootFolder>
+    <CurrentRoot>$(MSBuildProjectDirectory)\..\</CurrentRoot>
+
+    <PermissionMartixProjectPath>$(SolutionBasePath)\Btrak.PermissionsMatrix</PermissionMartixProjectPath>
+    <PermissionMatrixProjectName>..\sourcecode\BusinessView\Btrak.PermissionsMatrix\Btrak.PermissionsMatrix.csproj</PermissionMatrixProjectName>
+    <PermissionMatrixReleaseOutput>$(PermissionMartixProjectPath)\bin\Release</PermissionMatrixReleaseOutput>
+
+    <WebApiDeploymentFolder>$(DeploymentRootFolder)\WebApi</WebApiDeploymentFolder>
+    <SignalRApiDeploymentFolder>$(DeploymentRootFolder)\SignalRApi</SignalRApiDeploymentFolder>
+    <DesktopChatDeploymentFolder>$(DeploymentRootFolder)\DesktopChat</DesktopChatDeploymentFolder>
+    <FrontendDeploymentFolder>$(DeploymentRootFolder)\Frontend</FrontendDeploymentFolder>
+    <DatabaseDeploymentFolder>$(DeploymentRootFolder)\Database</DatabaseDeploymentFolder>
+    <HangfireServiceDeploymentFolder>$(DeploymentRootFolder)\HangfireService</HangfireServiceDeploymentFolder>
+    <WorkflowsServiceDeploymentFolder>$(DeploymentRootFolder)\WorkflowsService</WorkflowsServiceDeploymentFolder>
+
+    <DesktopChatAppOutputFolder>$(DeploymentRootFolder)\DesktopOutput\$(ProductName).Desktop.$(Environment).Output\</DesktopChatAppOutputFolder>
+    <DesktopChatAppFinalOutputFolder>$(DeploymentRootFolder)\DesktopOutput\$(ProductName).Desktop.$(Environment).Output\App.Publish</DesktopChatAppFinalOutputFolder>
+
+    <ApiOutputFolder>$(CurrentRoot)ApiOutput</ApiOutputFolder>
+    <SignalROutputFolder>$(CurrentRoot)SignalROutput</SignalROutputFolder>
+    <FinalBuildZipFileName>TimeChamp.Backend.$(BUILD_NUMBER)</FinalBuildZipFileName>
+    <WebProjectOutputDir>$(CurrentRoot)WebProjectOutputDir</WebProjectOutputDir>
+    <SignalrProjectOutputDir>$(CurrentRoot)SignalrProjectOutputDir</SignalrProjectOutputDir>
+
+    <FrontendProjectPath>..\sourcecode\BusinessView\BusinessView.V2.Web</FrontendProjectPath>
+    <FrontendProjectDistPath>$(FrontendProjectPath)\dist</FrontendProjectDistPath>
+
+    <SignalRProjectOutputDir>$(CurrentRoot)SignalRProjectOutputDir</SignalRProjectOutputDir>
+
+  </PropertyGroup>
+  <PropertyGroup>
+    <OctopusBranchName>$([System.Text.RegularExpressions.Regex]::Match($(TeamCityBranchName), `btrak[1-9]\d*|v2dev|dev|master`))</OctopusBranchName>
+  </PropertyGroup>
+  <PropertyGroup>
+    <NpmSubCommand>build-branches</NpmSubCommand>
+    <OctopusEnvironment>Development</OctopusEnvironment>
+  </PropertyGroup>
+  <Choose>
+
+    <When Condition=" '$(OctopusBranchName)'=='v2dev' ">
+      <PropertyGroup>
+        <NpmSubCommand>build-prod</NpmSubCommand>
+        <OctopusEnvironment>Development</OctopusEnvironment>
+      </PropertyGroup>
+    </When>
+   
+    <When Condition=" '$(OctopusBranchName)'=='dev' ">
+      <PropertyGroup>
+        <NpmSubCommand>build-prod</NpmSubCommand>
+      </PropertyGroup>
+    </When>
+	 <When Condition=" '$(OctopusBranchName)'=='btrak100' ">
+      <PropertyGroup>
+        <NpmSubCommand>build-prod</NpmSubCommand>
+      </PropertyGroup>
+    </When>
+  </Choose>
+
+  <Target Name="ReleaseBuild" DependsOnTargets="DllVersion;ApiDeploy;SignalRDeploy;ZipDeploymentRootFolder;PushToOctopus;CleanUpBuildFiles;"/>
+  <Target Name="TestLocalReleaseBuild" DependsOnTargets="DllVersion;DBBuild;ApiDeploy;SignalRDeploy;ZipDeploymentRootFolder;"/>
+  
+	<Target Name="ReplaceEncryptedUrls" Condition="$(TeamCityBranchName) == 'btrak402-v1intov2-changes'">
+	  <Exec Command="&quot;.\EncryptedUrlReplacer\EncryptedUrlReplacer.exe&quot; &quot;.\UrlsToEncrypt.txt&quot; &quot;.\EncryptedUrls.txt&quot; &quot;..\sourcecode\BusinessView\BusinessView.Common\RouteConstants.cs&quot;" />
+	</Target>
+	
+	<Target Name="SkipReplaceEncryptedUrlsForDevBranches" >
+	  <Exec Command="&quot;.\EncryptedUrlReplacer\EncryptedUrlReplacer.exe&quot; &quot;.\UrlsToEncrypt.txt&quot; &quot;.\EncryptedUrls.txt&quot; &quot;..\sourcecode\BusinessView\BusinessView.Common\InsecureRouteConstants.cs&quot;" />
+	</Target>
+
+  <Target Name="DllVersion">
+    <AssemblyInfo OutputFile="..\MasterAssemblyInfo.cs" CodeLanguage="CS" AssemblyCompany="Snovasys Software Solutions Ltd" AssemblyVersion="$(BUILD_NUMBER)" AssemblyFileVersion="$(BUILD_NUMBER)" />
+  </Target>
+
+  <ItemGroup>
+    <SolutionToBuild Include="..\sourcecode\BusinessView\$(SolutionName).sln" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <DatabaseSolutionToBuild Include="..\sourcecode\BusinessView\$(DatabaseSolutionName).sln" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ApiProject Include="$(ApiProjectName)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <SignalrProject Include="$(SignalrProjectName)" />
+  </ItemGroup>
+
+  <Target Name="Build" DependsOnTargets="SkipReplaceEncryptedUrlsForDevBranches">
+
+    <MSBuild Projects="@(SolutionToBuild)"
+      Properties="Configuration=Release;AlwaysCompileMarkupFilesInSeparateDomain=$(AlwaysCompileMarkupFilesInSeparateDomain)"
+      Targets="Restore" />
+
+    <MSBuild Projects="@(SolutionToBuild)"
+     Properties="Configuration=Release;AlwaysCompileMarkupFilesInSeparateDomain=$(AlwaysCompileMarkupFilesInSeparateDomain)"
+     Targets="ReBuild" />
+  </Target>
+
+  <Target Name="PublishApi" DependsOnTargets="Build">
+    <RemoveDir Directories="$(ApiOutputFolder)" ContinueOnError="true" />
+
+    <MSBuild Projects="@(ApiProject)"
+             Targets="ResolveReferences;_WPPCopyWebApplication"
+              Properties="Configuration=Release;Platform=AnyCPU;WebProjectOutputDir=$(ApiOutputFolder);OutDir=$(WebProjectOutputDir)" />
+
+    <ItemGroup>
+      <ApiOutputFolderFiles Include="$(ApiOutputFolder)\bin\**\*.*" />
+    </ItemGroup>
+    <ItemGroup>
+      <WebOutputFolderFiles Include="$(WebProjectOutputDir)\**\*.*" />
+    </ItemGroup>
+    <Message text="OutputFolderFiles: $(ApiOutputFolderFiles)" />
+    <Message text="WebOutputFolderFiles: $(WebOutputFolderFiles)" />
+    <Message text="Staring copying files" />
+    <Copy SourceFiles="@(WebOutputFolderFiles)" DestinationFolder="$(ApiOutputFolder)\bin\%(RecursiveDir)" SkipUnchangedFiles="true"  />
+    <Message text="copying files completed" />
+  </Target>
+
+  <Target Name="ApiDeploy" DependsOnTargets="PublishApi">
+    <RemoveDir Directories="$(WebApiDeploymentFolder)" ContinueOnError="true" />
+    <Message text="OutputFolder: $(ApiOutputFolder)" />
+    <ItemGroup>
+      <DeploymentFiles Include="$(ApiOutputFolder)\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeploymentFiles)" DestinationFolder="$(WebApiDeploymentFolder)\%(RecursiveDir)" />
+
+  </Target>
+
+  <Target Name="PublishSignalR" DependsOnTargets="Build">
+    <RemoveDir Directories="$(SignalROutputFolder)" ContinueOnError="true" />
+
+    <MSBuild Projects="@(SignalrProject)"
+             Targets="ResolveReferences;_WPPCopyWebApplication"
+             Properties="Configuration=Release;Platform=AnyCPU;WebProjectOutputDir=$(SignalROutputFolder);OutDir=$(SignalRProjectOutputDir)" />
+
+    <ItemGroup>
+      <SignalROutputFolderFiles Include="$(SignalROutputFolder)\bin\**\*.*" />
+    </ItemGroup>
+    <ItemGroup>
+      <SignalrOutputFolderFiles Include="$(SignalRProjectOutputDir)\**\*.*" />
+    </ItemGroup>
+    <Message text="OutputFolderFiles: $(SignalROutputFolderFiles)" />
+    <Message text="WebOutputFolderFiles: $(SignalrOutputFolderFiles)" />
+    <Message text="Staring copying files" />
+    <Copy SourceFiles="@(WebOutputFolderFiles)" DestinationFolder="$(SignalROutputFolder)\bin\%(RecursiveDir)" SkipUnchangedFiles="true"  />
+    <Message text="copying files completed" />
+  </Target>
+
+  <Target Name="SignalRDeploy" DependsOnTargets="PublishSignalR">
+    <RemoveDir Directories="$(SignalRApiDeploymentFolder)" ContinueOnError="true" />
+    <Message text="OutputFolder: $(SignalROutputFolder)" />
+    <ItemGroup>
+      <SignalrDeploymentFiles Include="$(SignalROutputFolder)\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(SignalrDeploymentFiles)" DestinationFolder="$(SignalRApiDeploymentFolder)\%(RecursiveDir)" />
+  </Target>
+
+  <Target Name="DBBuild">
+    
+    <MSBuild Projects="@(DatabaseSolutionToBuild)"
+             Properties="Configuration=Release;CmdLineInMemoryStorage=TRUE;AlwaysCompileMarkupFilesInSeparateDomain=$(AlwaysCompileMarkupFilesInSeparateDomain)"
+             Targets="ReBuild" />
+
+    <ItemGroup>
+      <DatabaseDeploymentFiles Include="$(SolutionBasePath)/Btrak.Database/bin/Release\**\*.*" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(DatabaseDeploymentFiles)" DestinationFolder="$(DatabaseDeploymentFolder)\%(RecursiveDir)" />
+
+  </Target>
+
+  <Target Name="ZipDeploymentRootFolder">
+    <Message text="OutputFolder: $(DeploymentRootFolder)" />
+
+    <Delete Files="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)\WebApi\Web.config" />
+    <Copy SourceFiles="Web.Api.config.Octo" DestinationFolder="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)\WebApi" />
+    <Move SourceFiles="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)\WebApi\Web.Api.config.Octo" DestinationFiles="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)\WebApi\Web.config" />
+
+    <ItemGroup>
+      <DeploymentApplicationFiles Include="$(DeploymentRootFolder)\**\*.*" />
+    </ItemGroup>
+    <Zip Files="@(DeploymentApplicationFiles)"
+         WorkingDirectory="..\TeamCityArtifacts"
+         ZipFileName="..\TeamCityArtifacts\$(FinalBuildZipFileName).$([System.DateTime]::Now.ToString('yyyyMMddHHmmss')).zip"
+         ZipLevel="9" />
+  </Target>
+
+  <Target Name="CleanUpBuildFiles">
+    <RemoveDir Directories="$(DeploymentRootFolder)" ContinueOnError="true" />
+  </Target>
+
+  <Target Name="PushToOctopus">
+    <Message Text="Input : $(TeamCityBranchName) Output : $(OctopusBranchName)"/>
+
+    <Exec Command="octo.exe pack --id=BTrak.WebApi.$(OctopusBranchName) --version=$(BUILD_NUMBER) --basePath=$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)\WebApi" WorkingDirectory="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)" />
+    <Exec Command="octo.exe push --package BTrak.WebApi.$(OctopusBranchName).$(BUILD_NUMBER).nupkg --ApiKey API-A0KAY20OFB8XFJYHG9QFAT0Y --server https://snovasys.octopus.app --replace-existing " WorkingDirectory="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)" />
+
+    <Exec Command="octo create-channel  --project BTrak.API.V2 --space Default --channel $(OctopusBranchName) --description $(BUILD_NUMBER) --update-existing --ApiKey API-A0KAY20OFB8XFJYHG9QFAT0Y --server https://snovasys.octopus.app " WorkingDirectory="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)" />
+    <Exec Command="octo create-release --gitRef octopus --project BTrak.API.V2 --space Default --channel $(OctopusBranchName) --packageVersion $(BUILD_NUMBER) --version $(BUILD_NUMBER) --variable Btrak.BranchName:$(OctopusBranchName) --ApiKey API-A0KAY20OFB8XFJYHG9QFAT0Y --server https://snovasys.octopus.app " WorkingDirectory="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)" />
+    <Exec Command="octo deploy-release --project BTrak.API.V2 --space Default --channel $(OctopusBranchName) --deployto $(OctopusEnvironment)  --version $(BUILD_NUMBER) --variable Btrak.BranchName:$(OctopusBranchName) --ApiKey API-A0KAY20OFB8XFJYHG9QFAT0Y --server https://snovasys.octopus.app " WorkingDirectory="$(BuildsBasePath)\$(ProductName)\$(BUILD_NUMBER)" />
+  </Target>
+
+  <UsingTask TaskName="ReplaceFileText" TaskFactory="CodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.v4.0.dll">
+    <ParameterGroup>
+      <InputFilename ParameterType="System.String" Required="true" />
+      <OutputFilename ParameterType="System.String" Required="true" />
+      <MatchExpression ParameterType="System.String" Required="true" />
+      <ReplacementText ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Reference Include="System.Core" />
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+				File.WriteAllText(
+					OutputFilename,
+					Regex.Replace(File.ReadAllText(InputFilename), MatchExpression, ReplacementText)
+					);
+			  ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+</Project>
